@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Autenticação Full Stack (Simulado)</title>
+    
+    <!-- Bibliotecas via CDN (Sem instalação necessária) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script> 
+</head>
+<body class="bg-slate-100">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Ícones ---
+        const Icons = {
+            User: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            Mail: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
+            Lock: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+            ArrowRight: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
+            CheckCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>,
+            XCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>,
+            CheckSmall: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+            LogIn: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>,
+            LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
+            LayoutDashboard: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>,
+            Bell: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+            AlertTriangle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+        };
+
+        function App() {
+            const [currentScreen, setCurrentScreen] = useState('register');
+            
+            // --- "Banco de Dados" Simulado na Memória ---
+            const [registeredUser, setRegisteredUser] = useState(null); 
+
+            // --- Estados do Formulário de Cadastro ---
+            const [regName, setRegName] = useState('');
+            const [regEmail, setRegEmail] = useState('');
+            const [regPassword, setRegPassword] = useState('');
+            
+            // --- Estados do Formulário de Login ---
+            const [loginEmail, setLoginEmail] = useState('');
+            const [loginPassword, setLoginPassword] = useState('');
+            const [loginError, setLoginError] = useState('');
+
+            // --- Estados de Validação e Feedback ---
+            const [isValid, setIsValid] = useState(false);
+            const [showSuccess, setShowSuccess] = useState(false);
+            
+            // ADICIONADO: Critério 'number' no estado inicial
+            const [criteria, setCriteria] = useState({ 
+                length: false, 
+                upper: false, 
+                lower: false, 
+                special: false,
+                number: false 
+            });
+
+            // Validação em Tempo Real da Senha (Regex)
+            useEffect(() => {
+                const newCriteria = {
+                    length: regPassword.length >= 4,
+                    upper: /[A-Z]/.test(regPassword),           // Letra Maiúscula
+                    lower: /[a-z]/.test(regPassword),           // Letra Minúscula
+                    special: /[!@#$%^&*(),.?":{}|<>]/.test(regPassword), // Especial
+                    number: /\d/.test(regPassword)              // ADICIONADO: Dígito Numérico (0-9)
+                };
+                setCriteria(newCriteria);
+                
+                // Só é válido se TODOS os valores do objeto forem true
+                setIsValid(Object.values(newCriteria).every(Boolean));
+            }, [regPassword]);
+
+            // --- Lógica de Cadastro ---
+            const handleRegisterSubmit = (e) => {
+                e.preventDefault();
+                if (!isValid) return; // Bloqueio de segurança
+
+                setRegisteredUser({
+                    name: regName,
+                    email: regEmail,
+                    password: regPassword
+                });
+
+                setShowSuccess(true);
+                setLoginError(''); // Limpa erros anteriores
+
+                setTimeout(() => {
+                    setShowSuccess(false);
+                    setCurrentScreen('login');
+                    setRegPassword(''); // Limpa senha por segurança
+                }, 2000);
+            };
+
+            // --- Lógica de Login ---
+            const handleLoginSubmit = (e) => {
+                e.preventDefault();
+                
+                if (!registeredUser) {
+                    setLoginError('Nenhum usuário encontrado. Cadastre-se primeiro.');
+                    return;
+                }
+
+                if (loginEmail === registeredUser.email && loginPassword === registeredUser.password) {
+                    setLoginError('');
+                    setCurrentScreen('dashboard');
+                } else {
+                    setLoginError('Email ou senha incorretos.');
+                }
+            };
+
+            const handleLogout = () => {
+                setLoginEmail('');
+                setLoginPassword('');
+                setCurrentScreen('login');
+            };
+
+            // Componente Check de Senha (Reutilizável)
+            const PasswordRequirement = ({ met, text }) => (
+                <div className={`flex items-center gap-2 text-xs transition-colors duration-300 ${met ? 'text-green-600' : 'text-slate-400'}`}>
+                    {met ? <Icons.CheckSmall /> : <Icons.XCircle />}
+                    <span>{text}</span>
+                </div>
+            );
+
+            // --- TELA DASHBOARD ---
+            if (currentScreen === 'dashboard') {
+                return (
+                    <div className="min-h-screen bg-slate-50 font-sans">
+                        <nav className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
+                            <div className="flex items-center gap-2 text-slate-800 font-bold text-xl">
+                                <span className="text-blue-600"><Icons.LayoutDashboard /></span>
+                                <span>MeuSistema</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full">
+                                    <span className="text-xs text-slate-500">Logado como:</span>
+                                    <span className="text-sm font-bold text-slate-700">{registeredUser?.name}</span>
+                                </div>
+                                <button onClick={handleLogout} className="flex items-center gap-2 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                                    <Icons.LogOut /> Sair
+                                </button>
+                            </div>
+                        </nav>
+                        <main className="max-w-6xl mx-auto p-8">
+                            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center">
+                                <h1 className="text-3xl font-bold text-slate-800 mb-2">Bem-vindo, {registeredUser?.name}!</h1>
+                                <p className="text-slate-600">Você acessou o sistema utilizando o e-mail: <strong>{registeredUser?.email}</strong></p>
+                                <div className="mt-6 p-4 bg-green-50 text-green-700 rounded-lg inline-block">
+                                    <span className="font-bold">Status:</span> Autenticado via Sessão Local (RAM)
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+                );
+            }
+
+            // --- TELA DE LOGIN E CADASTRO ---
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+                        <div className="bg-slate-800 p-6 text-center">
+                            <h1 className="text-2xl font-bold text-white">
+                                {currentScreen === 'register' ? 'Criar Conta' : 'Acessar Sistema'}
+                            </h1>
+                        </div>
+
+                        <div className="p-8">
+                            {/* Feedback de Sucesso */}
+                            {showSuccess && (
+                                <div className="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse">
+                                    <Icons.CheckCircle />
+                                    <span>Usuário cadastrado com sucesso!</span>
+                                </div>
+                            )}
+
+                            {/* Feedback de Erro no Login */}
+                            {loginError && currentScreen === 'login' && (
+                                <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse">
+                                    <Icons.AlertTriangle />
+                                    <span>{loginError}</span>
+                                </div>
+                            )}
+
+                            {/* --- FORMULÁRIO DE CADASTRO --- */}
+                            {currentScreen === 'register' && (
+                                <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icons.User /></div>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Nome de usuário" 
+                                            required 
+                                            value={regName}
+                                            onChange={(e) => setRegName(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                        />
+                                    </div>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icons.Mail /></div>
+                                        <input 
+                                            type="email" 
+                                            placeholder="Seu melhor email" 
+                                            required 
+                                            value={regEmail}
+                                            onChange={(e) => setRegEmail(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                        />
+                                    </div>
+                                    
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icons.Lock /></div>
+                                        <input 
+                                            type="password" 
+                                            placeholder="Crie uma senha forte" 
+                                            value={regPassword}
+                                            onChange={(e) => setRegPassword(e.target.value)}
+                                            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-all ${isValid ? 'border-green-500 focus:ring-green-500' : 'border-gray-300 focus:ring-red-500'}`}
+                                        />
+                                    </div>
+
+                                    {/* Lista de Critérios Atualizada */}
+                                    <div className="bg-slate-50 p-3 rounded-lg space-y-2 border border-slate-200">
+                                        <p className="text-xs font-bold text-slate-500 mb-2">Requisitos da Senha:</p>
+                                        <PasswordRequirement met={criteria.length} text="Mínimo de 4 caracteres" />
+                                        <PasswordRequirement met={criteria.upper} text="Letra Maiúscula (A-Z)" />
+                                        <PasswordRequirement met={criteria.lower} text="Letra Minúscula (a-z)" />
+                                        <PasswordRequirement met={criteria.number} text="Pelo menos um número (0-9)" />
+                                        <PasswordRequirement met={criteria.special} text="Caractere Especial (!@#...)" />
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        disabled={!isValid}
+                                        className={`w-full font-bold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 mt-4 shadow-md 
+                                            ${isValid ? 'bg-green-600 hover:bg-green-700 text-white hover:shadow-lg cursor-pointer' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                                    >
+                                        Cadastrar <Icons.ArrowRight />
+                                    </button>
+                                    
+                                    <div className="text-center mt-4">
+                                        <button type="button" onClick={() => setCurrentScreen('login')} className="text-sm text-slate-600 hover:text-blue-600 underline">Já tem conta? Faça Login</button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {/* --- FORMULÁRIO DE LOGIN --- */}
+                            {currentScreen === 'login' && (
+                                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icons.Mail /></div>
+                                        <input 
+                                            type="email" 
+                                            placeholder="Email cadastrado" 
+                                            required 
+                                            value={loginEmail}
+                                            onChange={(e) => setLoginEmail(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                                        />
+                                    </div>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icons.Lock /></div>
+                                        <input 
+                                            type="password" 
+                                            placeholder="Sua senha" 
+                                            required 
+                                            value={loginPassword}
+                                            onChange={(e) => setLoginPassword(e.target.value)}
+                                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                                        />
+                                    </div>
+                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors duration-300 flex items-center justify-center gap-2 mt-4 shadow-md">
+                                        Entrar <Icons.LogIn />
+                                    </button>
+                                    <div className="text-center mt-4">
+                                        <button type="button" onClick={() => setCurrentScreen('register')} className="text-sm text-slate-600 hover:text-green-600 underline">Não tem conta? Cadastre-se</button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
