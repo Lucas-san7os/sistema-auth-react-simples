@@ -9,7 +9,7 @@ Autenticação & Segurança:
 - Cadastro de Usuário: Criptografia automática de dados sensíveis antes do armazenamento.
 - Login Seguro: Descriptografia em tempo real para validação de credenciais.
 - Validação de Senha Forte: Feedback visual instantâneo dos requisitos de segurança.
-- Criptografia Simétrica: Implementação didática de cifra XOR + Base64 para proteção de dados em repouso.
+- Criptografia Profissional (AES-GCM): Implementação de padrão industrial com chaves de 256 bits via Web Crypto API.
 - 2FA (Simulado): Toggle para ativar Autenticação de Dois Fatores com notificações de sistema.
 - Recuperação de Conta: Cadastro seguro de e-mail de recuperação (criptografado no banco).
 
@@ -22,6 +22,7 @@ O projeto adota uma arquitetura Serverless/Buildless via CDN, executando diretam
 - Tailwind CSS: Design responsivo, Dark Mode e estilização moderna.
 - Babel: Transpilação de JSX in-browser.
 - LocalStorage: Banco de dados NoSQL simulado no cliente.
+- Web Crypto API: API nativa do navegador para operações criptográficas seguras (SubtleCrypto).
 - Lucide React: Ícones vetoriais.
 
 ### Como Executar
@@ -41,8 +42,13 @@ Para garantir a segurança (simulada), a senha deve atender aos seguintes crité
  - Pelo menos uma Letra Minúscula.
  - Pelo menos um Número.
  - Pelo menos um Caractere Especial (!@#...).
- - Criptografia (Educacional):
-Os dados sensíveis (E-mail, Senha e E-mail de Recuperação) são protegidos utilizando uma cifra XOR com uma chave privada, seguida de codificação Base64. Isso impede a leitura direta dos dados inspecionando o LocalStorage.
+ - Criptografia Real (AES-GCM):
+
+Diferente de métodos simples, este sistema utiliza AES-GCM (Galois/Counter Mode) com chaves de 256 bits derivadas via PBKDF2 (Password-Based Key Derivation Function 2).
+
+Integridade e Confidencialidade: O e-mail principal, a senha e o e-mail de recuperação são todos criptografados antes de serem salvos.
+
+IV Aleatório: Cada operação gera um IV (Vetor de Inicialização) único, garantindo que a mesma senha gere hashes diferentes a cada salvamento, protegendo contra ataques de análise de padrões.
 
 ### Observação Técnica
 
