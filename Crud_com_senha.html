@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema Genérico com Área Administrativa</title>
+    <title>Sistema Enterprise com AES-GCM</title>
     
     <!-- Bibliotecas via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -19,31 +19,85 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- Módulo de Criptografia Simples (XOR Cipher + Base64) ---
-        const SECRET_KEY = "CHAVE_ACADEMICA_SEGURA_2024";
+        // --- MÓDULO DE SEGURANÇA PROFISSIONAL (Web Crypto API) ---
+        // Padrão: AES-GCM 256-bit com PBKDF2 para derivação de chave
+        
+        const CryptoService = {
+            // Em produção, esta "Master Key" ficaria em um cofre no servidor (ex: AWS KMS).
+            MASTER_SECRET: "SERVER_KEY_V5_ACADEMIC_PROJECT_2025",
 
-        const simpleEncrypt = (text) => {
-            if (!text) return "";
-            let result = "";
-            for (let i = 0; i < text.length; i++) {
-                result += String.fromCharCode(text.charCodeAt(i) ^ SECRET_KEY.charCodeAt(i % SECRET_KEY.length));
-            }
-            return btoa(result);
-        };
+            str2ab: (str) => new TextEncoder().encode(str),
+            ab2base64: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))),
+            base642ab: (base64) => {
+                const binary_string = atob(base64);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) { bytes[i] = binary_string.charCodeAt(i); }
+                return bytes.buffer;
+            },
 
-        const simpleDecrypt = (cipherText) => {
-            if (!cipherText) return "";
-            try {
-                const text = atob(cipherText);
-                let result = "";
-                for (let i = 0; i < text.length; i++) {
-                    result += String.fromCharCode(text.charCodeAt(i) ^ SECRET_KEY.charCodeAt(i % SECRET_KEY.length));
+            async getKey() {
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw", 
+                    this.str2ab(this.MASTER_SECRET), 
+                    { name: "PBKDF2" }, 
+                    false, 
+                    ["deriveKey"]
+                );
+                
+                return window.crypto.subtle.deriveKey(
+                    { name: "PBKDF2", salt: this.str2ab("SALT_FIXO_APP"), iterations: 100000, hash: "SHA-256" },
+                    keyMaterial,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["encrypt", "decrypt"]
+                );
+            },
+
+            async encrypt(text) {
+                if (!text) return "";
+                try {
+                    const key = await this.getKey();
+                    const iv = window.crypto.getRandomValues(new Uint8Array(12)); 
+                    const encodedText = this.str2ab(text);
+
+                    const encryptedContent = await window.crypto.subtle.encrypt(
+                        { name: "AES-GCM", iv: iv },
+                        key,
+                        encodedText
+                    );
+
+                    return `${this.ab2base64(iv)}:${this.ab2base64(encryptedContent)}`;
+                } catch (e) {
+                    console.error("Erro Crypto:", e);
+                    return "";
                 }
-                return result;
-            } catch (e) { return ""; }
+            },
+
+            async decrypt(packedData) {
+                if (!packedData) return "";
+                try {
+                    const [ivB64, contentB64] = packedData.split(':');
+                    if (!ivB64 || !contentB64) return "";
+
+                    const key = await this.getKey();
+                    const iv = new Uint8Array(this.base642ab(ivB64));
+                    const content = this.base642ab(contentB64);
+
+                    const decryptedContent = await window.crypto.subtle.decrypt(
+                        { name: "AES-GCM", iv: iv },
+                        key,
+                        content
+                    );
+
+                    return new TextDecoder().decode(decryptedContent);
+                } catch (e) {
+                    return ""; 
+                }
+            }
         };
 
-        // --- Ícones ---
+        // --- Componentes de UI ---
         const Icons = {
             User: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
             Mail: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
@@ -66,54 +120,55 @@
 
         function App() {
             const [currentScreen, setCurrentScreen] = useState('register');
-            
-            // Controle do Modal de Configurações
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [activeSettingsTab, setActiveSettingsTab] = useState('profile');
 
-            // --- Banco de Dados Local (DB User) ---
-            // Agora contém: { name, email, password, recoveryEmail }
             const [dbUser, setDbUser] = useState(null); 
+            // Armazena dados criptografados para exibição didática
+            const [encryptedDisplay, setEncryptedDisplay] = useState({ email: '', password: '', recovery: '' });
             
-            // Dados Extras do Perfil (Profile Data)
-            const [profileData, setProfileData] = useState({
-                birthdate: '',
-                phone: '',
-                bio: ''
-            });
-
-            // Configurações do Usuário (Preferências)
-            const [userConfig, setUserConfig] = useState({
-                darkMode: false,
-                twoFactor: false
-                // recoveryEmail removido daqui, foi para dbUser
-            });
+            const [profileData, setProfileData] = useState({ birthdate: '', phone: '', bio: '' });
+            const [userConfig, setUserConfig] = useState({ darkMode: false, twoFactor: false });
             
-            // Estados para Input de Recuperação
             const [recoveryInput, setRecoveryInput] = useState('');
             const [recoveryError, setRecoveryError] = useState('');
 
-            // --- EFEITOS (Carregar/Salvar) ---
+            // --- Inicialização (Carregar do LocalStorage) ---
             useEffect(() => {
-                const storedData = localStorage.getItem('secure_db_user_v4'); // Chave atualizada para V4
-                const storedConfig = localStorage.getItem('secure_config_v4');
-                const storedProfile = localStorage.getItem('secure_profile_v4');
-                
-                if (storedData) {
-                    try {
-                        const parsed = JSON.parse(storedData);
-                        setDbUser({
-                            ...parsed,
-                            email: simpleDecrypt(parsed.email),
-                            password: simpleDecrypt(parsed.password),
-                            // Descriptografando o e-mail de recuperação se existir
-                            recoveryEmail: parsed.recoveryEmail ? simpleDecrypt(parsed.recoveryEmail) : ''
-                        });
-                    } catch (e) { console.error("Erro ao ler DB", e); }
-                }
+                const initData = async () => {
+                    const storedData = localStorage.getItem('secure_db_user_v5'); // Versão V5 para AES
+                    const storedConfig = localStorage.getItem('secure_config_v5');
+                    const storedProfile = localStorage.getItem('secure_profile_v5');
+                    
+                    if (storedData) {
+                        try {
+                            const parsed = JSON.parse(storedData);
+                            
+                            // Guardar versão encriptada para o Debug
+                            setEncryptedDisplay({
+                                email: parsed.email,
+                                password: parsed.password,
+                                recovery: parsed.recoveryEmail
+                            });
 
-                if (storedConfig) setUserConfig(JSON.parse(storedConfig));
-                if (storedProfile) setProfileData(JSON.parse(storedProfile));
+                            // Descriptografar para usar na memória (RAM)
+                            const decryptedEmail = await CryptoService.decrypt(parsed.email);
+                            const decryptedPass = await CryptoService.decrypt(parsed.password);
+                            const decryptedRecovery = parsed.recoveryEmail ? await CryptoService.decrypt(parsed.recoveryEmail) : '';
+
+                            setDbUser({
+                                ...parsed,
+                                email: decryptedEmail,
+                                password: decryptedPass,
+                                recoveryEmail: decryptedRecovery
+                            });
+                        } catch (e) { console.error("Erro ao ler DB", e); }
+                    }
+
+                    if (storedConfig) setUserConfig(JSON.parse(storedConfig));
+                    if (storedProfile) setProfileData(JSON.parse(storedProfile));
+                };
+                initData();
             }, []);
 
             useEffect(() => {
@@ -125,17 +180,15 @@
                     body.classList.add('bg-slate-100');
                     body.classList.remove('bg-slate-900', 'text-white');
                 }
-                localStorage.setItem('secure_config_v4', JSON.stringify(userConfig));
+                localStorage.setItem('secure_config_v5', JSON.stringify(userConfig));
             }, [userConfig]);
 
-            // Salvar perfil extra quando alterado
             const saveProfileData = (newData) => {
                 setProfileData(newData);
-                localStorage.setItem('secure_profile_v4', JSON.stringify(newData));
+                localStorage.setItem('secure_profile_v5', JSON.stringify(newData));
                 alert("Dados de perfil atualizados com sucesso!");
             };
 
-            // --- Estados de Inputs Auth ---
             const [regName, setRegName] = useState('');
             const [regEmail, setRegEmail] = useState('');
             const [regPassword, setRegPassword] = useState('');
@@ -148,7 +201,6 @@
             const [showSuccess, setShowSuccess] = useState(false);
             const [criteria, setCriteria] = useState({});
 
-            // Validação de Senha
             useEffect(() => {
                 const newCriteria = {
                     length: regPassword.length >= 8,
@@ -161,20 +213,33 @@
                 setIsValid(Object.values(newCriteria).every(Boolean));
             }, [regPassword]);
 
-            const handleRegisterSubmit = (e) => {
+            // --- Lógica de Cadastro com AES-GCM ---
+            const handleRegisterSubmit = async (e) => {
                 e.preventDefault();
                 if (!isValid) return;
 
+                // Criptografia Assíncrona
+                const encryptedEmail = await CryptoService.encrypt(regEmail);
+                const encryptedPassword = await CryptoService.encrypt(regPassword);
+                const encryptedRecovery = ""; // Inicialmente vazio
+
                 const newUserEncrypted = {
                     name: regName,
-                    email: simpleEncrypt(regEmail),
-                    password: simpleEncrypt(regPassword),
-                    recoveryEmail: '' // Inicia vazio, mas criptografado seria string vazia
+                    email: encryptedEmail,
+                    password: encryptedPassword,
+                    recoveryEmail: encryptedRecovery
                 };
 
-                localStorage.setItem('secure_db_user_v4', JSON.stringify(newUserEncrypted));
+                localStorage.setItem('secure_db_user_v5', JSON.stringify(newUserEncrypted));
                 
-                // Atualiza estado local (Descriptografado)
+                // Atualiza visualização de debug
+                setEncryptedDisplay({
+                    email: encryptedEmail,
+                    password: encryptedPassword,
+                    recovery: encryptedRecovery
+                });
+
+                // Atualiza estado local (Descriptografado para uso imediato)
                 setDbUser({ 
                     name: regName, 
                     email: regEmail, 
@@ -194,6 +259,8 @@
             const handleLoginSubmit = (e) => {
                 e.preventDefault();
                 if (!dbUser) { setLoginError('Nenhum usuário cadastrado.'); return; }
+                
+                // Comparação direta com os dados que já estão na memória (descriptografados na inicialização)
                 if (loginEmail === dbUser.email && loginPassword === dbUser.password) {
                     setLoginError('');
                     setCurrentScreen('dashboard');
@@ -205,11 +272,10 @@
             const handleLogout = () => {
                 setLoginEmail('');
                 setLoginPassword('');
-                setIsSettingsOpen(false); // Fecha o modal se estiver aberto
+                setIsSettingsOpen(false);
                 setCurrentScreen('login');
             };
 
-            // Helpers de Config
             const toggleTheme = () => setUserConfig(prev => ({...prev, darkMode: !prev.darkMode}));
             
             const toggle2FA = () => {
@@ -222,53 +288,58 @@
                 }
             };
             
-            // --- NOVA LÓGICA DE E-MAIL DE RECUPERAÇÃO (SALVO NO BANCO) ---
-            const handleAddRecoveryEmail = () => {
+            // --- Adicionar Email de Recuperação com AES ---
+            const handleAddRecoveryEmail = async () => {
                 if (!recoveryInput) return;
                 
-                // Validação: Não pode ser igual ao e-mail principal
                 if (recoveryInput === dbUser.email) {
                     setRecoveryError('O e-mail de recuperação não pode ser igual ao principal.');
                     return;
                 }
-                
                 if (!recoveryInput.includes('@')) {
                     setRecoveryError('E-mail inválido.');
                     return;
                 }
                 
-                // 1. Atualizar o estado local (Descriptografado para uso na UI)
                 const updatedUser = { ...dbUser, recoveryEmail: recoveryInput };
                 setDbUser(updatedUser);
 
-                // 2. Criptografar e Salvar no "Banco de Dados" (LocalStorage)
-                const encryptedUser = {
+                // Re-criptografar tudo para salvar
+                const encryptedEmail = await CryptoService.encrypt(updatedUser.email);
+                const encryptedPass = await CryptoService.encrypt(updatedUser.password);
+                const encryptedRec = await CryptoService.encrypt(updatedUser.recoveryEmail);
+
+                const encryptedUserDB = {
                     name: updatedUser.name,
-                    email: simpleEncrypt(updatedUser.email),
-                    password: simpleEncrypt(updatedUser.password),
-                    recoveryEmail: simpleEncrypt(updatedUser.recoveryEmail) // Criptografando
+                    email: encryptedEmail,
+                    password: encryptedPass,
+                    recoveryEmail: encryptedRec
                 };
                 
-                localStorage.setItem('secure_db_user_v4', JSON.stringify(encryptedUser));
-                
+                localStorage.setItem('secure_db_user_v5', JSON.stringify(encryptedUserDB));
+                setEncryptedDisplay({ email: encryptedEmail, password: encryptedPass, recovery: encryptedRec });
+
                 setRecoveryError('');
-                alert("E-mail de recuperação salvo e criptografado no banco de dados!");
+                alert("E-mail de recuperação criptografado e salvo com sucesso!");
                 setRecoveryInput('');
             };
 
-            const handleRemoveRecoveryEmail = () => {
-                // Remove do estado
+            const handleRemoveRecoveryEmail = async () => {
                 const updatedUser = { ...dbUser, recoveryEmail: '' };
                 setDbUser(updatedUser);
 
-                // Remove do banco (criptografado como vazio)
-                const encryptedUser = {
+                // Salvar vazio (mas precisamos manter o resto dos dados)
+                const encryptedEmail = await CryptoService.encrypt(updatedUser.email);
+                const encryptedPass = await CryptoService.encrypt(updatedUser.password);
+
+                const encryptedUserDB = {
                     name: updatedUser.name,
-                    email: simpleEncrypt(updatedUser.email),
-                    password: simpleEncrypt(updatedUser.password),
-                    recoveryEmail: ''
+                    email: encryptedEmail,
+                    password: encryptedPass,
+                    recoveryEmail: ""
                 };
-                localStorage.setItem('secure_db_user_v4', JSON.stringify(encryptedUser));
+                localStorage.setItem('secure_db_user_v5', JSON.stringify(encryptedUserDB));
+                setEncryptedDisplay({ email: encryptedEmail, password: encryptedPass, recovery: "" });
             };
 
             const PasswordRequirement = ({ met, text }) => (
@@ -278,23 +349,19 @@
                 </div>
             );
 
-            // --- CLASSES CSS DINÂMICAS ---
             const textClass = userConfig.darkMode ? 'text-white' : 'text-slate-800';
             const bgCard = userConfig.darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200';
             const inputClass = userConfig.darkMode 
                 ? 'bg-slate-700 border-slate-600 text-white focus:ring-blue-500' 
                 : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500';
 
-            // --- TELA DO "SITE GENÉRICO" (DASHBOARD) ---
+            // --- RENDER ---
             if (currentScreen === 'dashboard') {
                 return (
                     <div className={`min-h-screen relative font-sans ${textClass}`}>
                         
                         <div className="absolute top-6 left-6 z-50">
-                            <button 
-                                onClick={() => setIsSettingsOpen(true)}
-                                className={`p-3 rounded-full shadow-lg transition-transform hover:scale-110 flex items-center gap-2 ${userConfig.darkMode ? 'bg-blue-600 text-white' : 'bg-white text-slate-800 hover:bg-slate-50'}`}
-                            >
+                            <button onClick={() => setIsSettingsOpen(true)} className={`p-3 rounded-full shadow-lg transition-transform hover:scale-110 flex items-center gap-2 ${userConfig.darkMode ? 'bg-blue-600 text-white' : 'bg-white text-slate-800 hover:bg-slate-50'}`}>
                                 <Icons.Settings className="animate-spin-slow" />
                                 <span className="text-xs font-bold hidden md:inline">Config</span>
                             </button>
@@ -316,37 +383,27 @@
                                     Bem-vindo ao Futuro
                                 </h1>
                                 <p className={`text-xl max-w-2xl mx-auto ${userConfig.darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                                    Olá, <strong>{dbUser?.name}</strong>. Esta é a área exclusiva para membros da nossa plataforma fictícia. Explore nossos recursos de inovação.
+                                    Olá, <strong>{dbUser?.name}</strong>. Área segura com criptografia <strong>AES-GCM</strong>.
                                 </p>
                                 <div className="flex justify-center gap-4">
-                                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-blue-500/30 transition-all">
-                                        Começar Agora
-                                    </button>
-                                    <button className={`px-8 py-3 rounded-lg font-bold border transition-all ${userConfig.darkMode ? 'border-slate-600 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'}`}>
-                                        Saiba Mais
-                                    </button>
+                                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-blue-500/30 transition-all">Começar</button>
+                                    <button className={`px-8 py-3 rounded-lg font-bold border transition-all ${userConfig.darkMode ? 'border-slate-600 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'}`}>Saiba Mais</button>
                                 </div>
                             </div>
 
                             <div className="grid md:grid-cols-3 gap-6">
                                 <div className={`p-6 rounded-xl border ${bgCard} hover:border-blue-500 transition-colors cursor-pointer group`}>
-                                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                        <Icons.Database />
-                                    </div>
+                                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors"><Icons.Database /></div>
                                     <h3 className="text-xl font-bold mb-2">Cloud Data</h3>
                                     <p className="opacity-70 text-sm">Armazenamento escalável para seus projetos enterprise.</p>
                                 </div>
                                 <div className={`p-6 rounded-xl border ${bgCard} hover:border-purple-500 transition-colors cursor-pointer group`}>
-                                    <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                                        <Icons.Shield />
-                                    </div>
-                                    <h3 className="text-xl font-bold mb-2">Segurança Total</h3>
-                                    <p className="opacity-70 text-sm">Proteção ponta a ponta com criptografia de última geração.</p>
+                                    <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Icons.Shield /></div>
+                                    <h3 className="text-xl font-bold mb-2">AES-GCM 256</h3>
+                                    <p className="opacity-70 text-sm">Proteção militar ponta a ponta com criptografia de última geração.</p>
                                 </div>
                                 <div className={`p-6 rounded-xl border ${bgCard} hover:border-green-500 transition-colors cursor-pointer group`}>
-                                    <div className="w-12 h-12 bg-green-100 text-green-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                                        <Icons.CheckCircle />
-                                    </div>
+                                    <div className="w-12 h-12 bg-green-100 text-green-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors"><Icons.CheckCircle /></div>
                                     <h3 className="text-xl font-bold mb-2">Alta Performance</h3>
                                     <p className="opacity-70 text-sm">Otimização de recursos para máxima velocidade.</p>
                                 </div>
@@ -358,101 +415,44 @@
                                 <div className={`w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl flex overflow-hidden border ${bgCard} border-slate-600`}>
                                     
                                     <aside className={`w-64 p-6 flex flex-col gap-2 border-r ${userConfig.darkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                                            <Icons.Settings className="text-blue-500" /> Ajustes
-                                        </h2>
-                                        
-                                        <button 
-                                            onClick={() => setActiveSettingsTab('profile')}
-                                            className={`text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'profile' ? 'bg-blue-600 text-white' : 'hover:bg-slate-500/10'}`}
-                                        >
-                                            <Icons.User size={18} /> Meu Perfil
-                                        </button>
-                                        <button 
-                                            onClick={() => setActiveSettingsTab('security')}
-                                            className={`text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'security' ? 'bg-blue-600 text-white' : 'hover:bg-slate-500/10'}`}
-                                        >
-                                            <Icons.Shield size={18} /> Segurança
-                                        </button>
-                                        
+                                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Icons.Settings className="text-blue-500" /> Ajustes</h2>
+                                        <button onClick={() => setActiveSettingsTab('profile')} className={`text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'profile' ? 'bg-blue-600 text-white' : 'hover:bg-slate-500/10'}`}><Icons.User size={18} /> Meu Perfil</button>
+                                        <button onClick={() => setActiveSettingsTab('security')} className={`text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'security' ? 'bg-blue-600 text-white' : 'hover:bg-slate-500/10'}`}><Icons.Shield size={18} /> Segurança</button>
                                         <div className="mt-auto pt-4 border-t border-slate-500/20">
-                                            <button 
-                                                onClick={() => setActiveSettingsTab('debug')}
-                                                className={`w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'debug' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'text-slate-500 hover:text-red-500'}`}
-                                            >
-                                                <Icons.Database size={18} /> Dados do Sistema
-                                            </button>
+                                            <button onClick={() => setActiveSettingsTab('debug')} className={`w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-colors ${activeSettingsTab === 'debug' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'text-slate-500 hover:text-red-500'}`}><Icons.Database size={18} /> Dados do Sistema</button>
                                         </div>
                                     </aside>
 
                                     <div className="flex-1 p-8 overflow-y-auto relative">
-                                        <button onClick={() => setIsSettingsOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-500/10 rounded-full">
-                                            <Icons.X />
-                                        </button>
+                                        <button onClick={() => setIsSettingsOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-slate-500/10 rounded-full"><Icons.X /></button>
 
                                         {activeSettingsTab === 'profile' && (
                                             <div className="space-y-6">
                                                 <h3 className="text-2xl font-bold border-b pb-4 border-slate-500/20">Editar Perfil</h3>
-                                                
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                     <div>
                                                         <label className="block text-sm font-medium mb-2 opacity-70">Nome Completo</label>
-                                                        <div className={`flex items-center gap-2 p-3 border rounded-lg opacity-60 cursor-not-allowed ${bgCard}`}>
-                                                            <Icons.User size={18} />
-                                                            <span>{dbUser?.name}</span>
-                                                            <span className="text-xs ml-auto">(Fixo)</span>
-                                                        </div>
+                                                        <div className={`flex items-center gap-2 p-3 border rounded-lg opacity-60 cursor-not-allowed ${bgCard}`}><Icons.User size={18} /><span>{dbUser?.name}</span><span className="text-xs ml-auto">(Fixo)</span></div>
                                                     </div>
                                                     <div>
                                                         <label className="block text-sm font-medium mb-2 opacity-70">E-mail</label>
-                                                        <div className={`flex items-center gap-2 p-3 border rounded-lg opacity-60 cursor-not-allowed ${bgCard}`}>
-                                                            <Icons.Mail size={18} />
-                                                            <span>{dbUser?.email}</span>
-                                                            <span className="text-xs ml-auto">(Fixo)</span>
-                                                        </div>
+                                                        <div className={`flex items-center gap-2 p-3 border rounded-lg opacity-60 cursor-not-allowed ${bgCard}`}><Icons.Mail size={18} /><span>{dbUser?.email}</span><span className="text-xs ml-auto">(Fixo)</span></div>
                                                     </div>
                                                     <div>
                                                         <label className="block text-sm font-medium mb-2">Data de Nascimento</label>
-                                                        <div className="relative">
-                                                            <span className="absolute left-3 top-3 opacity-50"><Icons.Calendar size={18}/></span>
-                                                            <input 
-                                                                type="date" 
-                                                                value={profileData.birthdate} 
-                                                                onChange={(e) => setProfileData({...profileData, birthdate: e.target.value})}
-                                                                className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`} 
-                                                            />
-                                                        </div>
+                                                        <div className="relative"><span className="absolute left-3 top-3 opacity-50"><Icons.Calendar size={18}/></span><input type="date" value={profileData.birthdate} onChange={(e) => setProfileData({...profileData, birthdate: e.target.value})} className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`} /></div>
                                                     </div>
                                                     <div>
                                                         <label className="block text-sm font-medium mb-2">Telefone</label>
-                                                        <div className="relative">
-                                                            <span className="absolute left-3 top-3 opacity-50"><Icons.Phone size={18}/></span>
-                                                            <input 
-                                                                type="tel" 
-                                                                placeholder="(00) 00000-0000"
-                                                                value={profileData.phone} 
-                                                                onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
-                                                                className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`} 
-                                                            />
-                                                        </div>
+                                                        <div className="relative"><span className="absolute left-3 top-3 opacity-50"><Icons.Phone size={18}/></span><input type="tel" placeholder="(00) 00000-0000" value={profileData.phone} onChange={(e) => setProfileData({...profileData, phone: e.target.value})} className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`} /></div>
                                                     </div>
                                                 </div>
-
                                                 <div>
                                                     <label className="block text-sm font-medium mb-2">Biografia</label>
-                                                    <textarea 
-                                                        rows="3"
-                                                        placeholder="Fale um pouco sobre você..."
-                                                        value={profileData.bio}
-                                                        onChange={(e) => setProfileData({...profileData, bio: e.target.value})}
-                                                        className={`w-full p-4 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`}
-                                                    ></textarea>
+                                                    <textarea rows="3" placeholder="Fale um pouco sobre você..." value={profileData.bio} onChange={(e) => setProfileData({...profileData, bio: e.target.value})} className={`w-full p-4 border rounded-lg focus:outline-none focus:ring-2 ${inputClass}`}></textarea>
                                                 </div>
-
                                                 <div className="pt-4 flex justify-end">
-                                                    <button onClick={() => saveProfileData(profileData)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold">
-                                                        Salvar Alterações
-                                                    </button>
+                                                    <button onClick={() => saveProfileData(profileData)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold">Salvar Alterações</button>
                                                 </div>
                                             </div>
                                         )}
@@ -464,47 +464,23 @@
                                                 <div className={`p-4 rounded-xl border flex items-center justify-between ${bgCard}`}>
                                                     <div className="flex items-center gap-4">
                                                         <div className="p-2 bg-green-100 text-green-600 rounded-lg"><Icons.Shield /></div>
-                                                        <div>
-                                                            <p className="font-bold">Autenticação de Dois Fatores (2FA)</p>
-                                                            <p className="text-sm opacity-60">Segurança adicional no login</p>
-                                                        </div>
+                                                        <div><p className="font-bold">Autenticação de Dois Fatores (2FA)</p><p className="text-sm opacity-60">Segurança adicional no login</p></div>
                                                     </div>
-                                                    <button onClick={toggle2FA} className={`w-12 h-6 rounded-full p-1 transition-colors ${userConfig.twoFactor ? 'bg-green-600' : 'bg-slate-300'}`}>
-                                                        <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${userConfig.twoFactor ? 'translate-x-6' : ''}`}></div>
-                                                    </button>
+                                                    <button onClick={toggle2FA} className={`w-12 h-6 rounded-full p-1 transition-colors ${userConfig.twoFactor ? 'bg-green-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${userConfig.twoFactor ? 'translate-x-6' : ''}`}></div></button>
                                                 </div>
 
                                                 <div className={`p-4 rounded-xl border ${bgCard}`}>
                                                     <div className="flex items-center gap-4 mb-3">
                                                         <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Icons.Mail /></div>
-                                                        <div>
-                                                            <p className="font-bold">E-mail de Recuperação</p>
-                                                            <p className="text-sm opacity-60">Para redefinir sua senha caso a esqueça</p>
-                                                        </div>
+                                                        <div><p className="font-bold">E-mail de Recuperação</p><p className="text-sm opacity-60">Para redefinir sua senha</p></div>
                                                     </div>
-                                                    
                                                     <div className="flex gap-2">
-                                                        <input 
-                                                            type="email" 
-                                                            value={dbUser?.recoveryEmail || recoveryInput}
-                                                            onChange={(e) => setRecoveryInput(e.target.value)}
-                                                            disabled={!!dbUser?.recoveryEmail}
-                                                            placeholder="exemplo@recuperacao.com"
-                                                            className={`flex-1 px-3 py-2 rounded border ${inputClass} ${!!dbUser?.recoveryEmail ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                        />
-                                                        {!dbUser?.recoveryEmail && (
-                                                            <button onClick={handleAddRecoveryEmail} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold text-sm">
-                                                                Salvar
-                                                            </button>
-                                                        )}
-                                                        {dbUser?.recoveryEmail && (
-                                                             <button onClick={handleRemoveRecoveryEmail} className="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold">
-                                                                Remover
-                                                            </button>
-                                                        )}
+                                                        <input type="email" value={dbUser?.recoveryEmail || recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} disabled={!!dbUser?.recoveryEmail} placeholder="exemplo@recuperacao.com" className={`flex-1 px-3 py-2 rounded border ${inputClass} ${!!dbUser?.recoveryEmail ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                                                        {!dbUser?.recoveryEmail && <button onClick={handleAddRecoveryEmail} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold text-sm">Salvar</button>}
+                                                        {dbUser?.recoveryEmail && <button onClick={handleRemoveRecoveryEmail} className="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold">Remover</button>}
                                                     </div>
                                                     {recoveryError && <p className="text-red-500 text-xs mt-2 font-bold">{recoveryError}</p>}
-                                                    {dbUser?.recoveryEmail && <p className="text-green-500 text-xs mt-2 flex items-center gap-1 font-bold"><Icons.CheckSmall/> Protegido & Salvo no DB</p>}
+                                                    {dbUser?.recoveryEmail && <p className="text-green-500 text-xs mt-2 flex items-center gap-1 font-bold"><Icons.CheckSmall/> Protegido via AES-GCM</p>}
                                                 </div>
                                             </div>
                                         )}
@@ -512,24 +488,24 @@
                                         {activeSettingsTab === 'debug' && (
                                             <div className="space-y-6">
                                                 <h3 className="text-2xl font-bold border-b pb-4 border-slate-500/20 text-red-500 flex items-center gap-2">
-                                                    <Icons.AlertTriangle /> Dados do Sistema
+                                                    <Icons.AlertTriangle /> Dados Brutos (AES-GCM 256)
                                                 </h3>
                                                 
                                                 <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded mb-6">
-                                                    <p className="font-bold text-sm uppercase mb-1">Aviso Educacional</p>
+                                                    <p className="font-bold text-sm uppercase mb-1">Criptografia Real</p>
                                                     <p className="text-sm">
-                                                        Esta tela demonstra como os dados (incluindo o e-mail de recuperação) estão sendo criptografados e salvos no Banco de Dados (LocalStorage).
+                                                        Abaixo estão os dados reais salvos no LocalStorage. Observe que cada criptografia inclui um Vetor de Inicialização (IV) e o conteúdo cifrado (Ciphertext).
                                                     </p>
                                                 </div>
 
                                                 <div className="space-y-4">
                                                     <div className={`p-4 rounded-lg border border-slate-500/20 bg-slate-500/5`}>
-                                                        <p className="text-sm font-bold uppercase opacity-50 mb-2">Dados Criptografados (LocalStorage)</p>
+                                                        <p className="text-sm font-bold uppercase opacity-50 mb-2">Dados Cifrados (Storage)</p>
                                                         <code className="block p-4 bg-black/90 text-green-400 rounded-lg text-xs font-mono break-all leading-relaxed shadow-inner">
                                                             <span className="text-purple-400">const</span> dbUser = &#123;<br/>
-                                                            &nbsp;&nbsp;<span className="text-blue-300">"email"</span>: <span className="text-yellow-300">"{simpleEncrypt(dbUser?.email)}"</span>,<br/>
-                                                            &nbsp;&nbsp;<span className="text-blue-300">"password"</span>: <span className="text-yellow-300">"{simpleEncrypt(dbUser?.password)}"</span>,<br/>
-                                                            &nbsp;&nbsp;<span className="text-blue-300">"recoveryEmail"</span>: <span className="text-yellow-300">"{simpleEncrypt(dbUser?.recoveryEmail)}"</span>,<br/>
+                                                            &nbsp;&nbsp;<span className="text-blue-300">"email"</span>: <span className="text-yellow-300">"{encryptedDisplay.email}"</span>,<br/>
+                                                            &nbsp;&nbsp;<span className="text-blue-300">"password"</span>: <span className="text-yellow-300">"{encryptedDisplay.password}"</span>,<br/>
+                                                            &nbsp;&nbsp;<span className="text-blue-300">"recoveryEmail"</span>: <span className="text-yellow-300">"{encryptedDisplay.recovery}"</span>,<br/>
                                                             &nbsp;&nbsp;<span className="text-blue-300">"name"</span>: "{dbUser?.name}"<br/>
                                                             &#125;
                                                         </code>
@@ -555,22 +531,13 @@
                                 {currentScreen === 'register' ? 'Criar Conta Segura' : 'Acessar Sistema'}
                             </h1>
                             <div className="flex justify-center mt-2 text-slate-400 text-xs gap-4">
-                                <span className="flex items-center gap-1"><Icons.Database size={12}/> DB Criptografado</span>
+                                <span className="flex items-center gap-1"><Icons.Shield size={12}/> AES-GCM 256-bit</span>
                             </div>
                         </div>
 
                         <div className="p-8">
-                            {showSuccess && (
-                                <div className="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse">
-                                    <Icons.CheckCircle /><span>Usuário cadastrado!</span>
-                                </div>
-                            )}
-
-                            {loginError && currentScreen === 'login' && (
-                                <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse">
-                                    <Icons.AlertTriangle /><span>{loginError}</span>
-                                </div>
-                            )}
+                            {showSuccess && <div className="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse"><Icons.CheckCircle /><span>Usuário cadastrado!</span></div>}
+                            {loginError && currentScreen === 'login' && <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative flex items-center gap-2 animate-pulse"><Icons.AlertTriangle /><span>{loginError}</span></div>}
 
                             {currentScreen === 'register' && (
                                 <form onSubmit={handleRegisterSubmit} className="space-y-4">
